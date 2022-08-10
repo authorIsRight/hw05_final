@@ -6,9 +6,10 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
+from django.core.cache import cache
 
 
-from posts.models import Group, Post, Comment
+from posts.models import Group, Post
 
 User = get_user_model()
 TEMP_MEDIA_ROOT = tempfile.mkdtemp(dir=settings.BASE_DIR)
@@ -42,6 +43,12 @@ class PostCreateFormTests(TestCase):
         self.guest_client = Client()
         self.authorized_client = Client()
         self.authorized_client.force_login(self.user)
+        cache.clear()
+
+    def post_asserts(self, post, form_data):
+        self.assertEqual(post.text, form_data['text'])
+        self.assertEqual(post.author, self.user)
+        self.assertEqual(post.group_id, form_data['group'])
 
     def test_post_create(self):
         """Проверка создания поста."""
@@ -75,12 +82,19 @@ class PostCreateFormTests(TestCase):
                 'posts:profile',
                 kwargs={'username': self.user.username})
         )
+
         self.assertEqual(Post.objects.count(), posts_count + 1)
+        # неавторизованный пользователь пытается создать пост
+        self.client.post(
+            reverse('posts:post_create'),
+            data=form_data,
+            follow=True
+        )
+        self.assertEqual(Post.objects.count(), posts_count + 1)
+
         post = Post.objects.latest('id')
-        self.assertEqual(post.text, form_data['text'])
-        self.assertEqual(post.author, self.user)
-        self.assertEqual(post.group_id, form_data['group'])
-        # поправил почти как по примеру в уроке
+        # call function to make some asserts
+        self.post_asserts(post, form_data)
         self.assertEqual(post.image.name, 'posts/small.gif')
 
     def test_post_edit(self):
@@ -98,48 +112,6 @@ class PostCreateFormTests(TestCase):
             text=form_data['text'],
             group=form_data['group']
         )
-        self.assertEqual(post.text, form_data['text'])
-        self.assertEqual(post.author, self.user)
-        self.assertEqual(post.group_id, form_data['group'])
-
-    def test_authorized_user_create_comment(self):
-        """Проверка создания коммента авторизированным пользщователем"""
-        comments_count = Comment.objects.count()
-        post = Post.objects.create(
-            text='Тест Текст пост',
-            author=self.user)
-        form_data = {'text': 'Тестовый коммент'}
-        response = self.authorized_client.post(
-            reverse(
-                'posts:add_comment',
-                kwargs={'post_id': post.id}),
-            data=form_data,
-            follow=True)
-        comment = Comment.objects.latest('id')
-        # появился новый коммент на странице поста
-        self.assertEqual(Comment.objects.count(), comments_count + 1)
-        self.assertEqual(comment.text, form_data['text'])
-        self.assertEqual(comment.author, self.user)
-        self.assertEqual(comment.post_id, post.id)
-        self.assertRedirects(
-            response, reverse('posts:post_detail', args={post.id}))
-
-    def test_nonauthorized_user_create_comment(self):
-        """Проверка создания коммента не авторизированным пользователем."""
-        comments_count = Comment.objects.count()
-        post = Post.objects.create(
-            text='Тест Текст пост',
-            author=self.user)
-        form_data = {'text': 'Тестовый коммент'}
-        response = self.guest_client.post(
-            reverse(
-                'posts:add_comment',
-                kwargs={'post_id': post.id}),
-            data=form_data,
-            follow=True)
-        redirect = reverse('login') + '?next=' + reverse(
-            'posts:add_comment', kwargs={'post_id': post.id})
-        self.assertEqual(response.status_code, 200)
-        # не появился на странице поста
-        self.assertEqual(Comment.objects.count(), comments_count)
-        self.assertRedirects(response, redirect)
+        # call function to make some asserts
+        self.post_asserts(post, form_data)
+        # не смог придумать проверку, что чужак не может редактировать других

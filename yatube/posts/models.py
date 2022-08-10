@@ -1,11 +1,14 @@
-# from pyexpat import model
 from django.db import models
 from django.contrib.auth import get_user_model
+from django.db.models import UniqueConstraint
 
 User = get_user_model()
 
 
 class Group(models.Model):
+    class Meta:
+        ordering = ['-slug']
+
     title = models.CharField(max_length=200)
     slug = models.SlugField(unique=True)
     description = models.TextField()
@@ -93,12 +96,18 @@ class Comment(models.Model):
 
 
 class Follow(models.Model):
+    class Meta:
+        ordering = ['-user']
+        UniqueConstraint(name='follower_follows',
+                         fields=['user', 'author'])
+
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
         related_name='follower',
         verbose_name='подписчик'
     )
+
     author = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
