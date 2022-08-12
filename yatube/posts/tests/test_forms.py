@@ -22,6 +22,7 @@ class PostCreateFormTests(TestCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.user = User.objects.create_user(username='aBoyHasNoName')
+        cls.auth = User.objects.create_user(username='Neo')
         cls.group = Group.objects.create(
             title='Тестовое название группы',
             slug='test-slug',
@@ -40,9 +41,13 @@ class PostCreateFormTests(TestCase):
 
     def setUp(self):
         self.user = PostCreateFormTests.user
+        self.auth = PostCreateFormTests.auth
         self.guest_client = Client()
         self.authorized_client = Client()
         self.authorized_client.force_login(self.user)
+        self.authorized_not_author = Client()
+        self.authorized_not_author.force_login(self.auth)
+
         cache.clear()
 
     def post_asserts(self, post, form_data):
@@ -114,4 +119,22 @@ class PostCreateFormTests(TestCase):
         )
         # call function to make some asserts
         self.post_asserts(post, form_data)
-        # не смог придумать проверку, что чужак не может редактировать других
+
+    def test_post_edit_by_other(self):
+        """Проверка редактирования поста другим юзером."""
+        form_data = {
+            'text': 'Упс, что-то пошло не так',
+            'group': self.group.id,
+        }
+        self.authorized_not_author.post(
+            reverse('posts:post_edit', kwargs={'post_id': self.post.id}),
+            data=form_data,
+            follow=True
+        )
+        # thanks to Arsen for the help with the next row))
+        post = Post.objects.get(id=self.post.id)
+        # tried to change only text, should not be equal
+        self.assertNotEqual(post.text, form_data['text'])
+        # Group and author were not the subject to the change
+        self.assertEqual(post.author, self.user)
+        self.assertEqual(post.group_id, form_data['group'])
